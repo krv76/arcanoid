@@ -4,11 +4,20 @@
 
 #include <vector>
 
+char NetColor[] = { 255, 205, 0, 0 };
+char BallColor[] = { 255, 255, 255, 0 };
+char BrickColor[] = { 
+    64, 64, 128, 0,
+    128, 128, 192, 0,
+    200, 215, 255, 0
+};
+char BorderColor[4] = { 128, 128, 128, 0 };
+char FieldColor[4] = { 160, 80, 128, 0 };
+char FlashColor[4] = { 255, 255, 255, 0 };
+
 struct Point { int x, y;};
 struct PointF { float x, y;};
 struct Brick { Point p; int State;};
-
-
 
 std::vector<Brick> Bricks;
 Point Ball;
@@ -18,8 +27,8 @@ Point FieldFrom;
 Point FieldTo;
 Point Net;
 PointF NetF;
-const Point NET_SIZE{ 140, 5 };
-const float QUANT = 0.003;
+const Point NET_SIZE{ 100, 5 };
+const float QUANT = 0.005;
 const Point BRICK_SIZE = { 20, 20 };
 const Point BALL_SIZE = { 6, 6 };
 
@@ -90,31 +99,46 @@ void close_game(){
   shadow_buf=NULL;
 }
 
-void draw_rect(Point& from, Point& to, char c) {
+void draw_rect(const Point& from, const Point& to, char* color) {
     for (int y = from.y; y < to.y; ++y)
-        memset(shadow_buf +
-        (y * sv_width + from.x),
-        c, (to.x - from.x) * 4);
+    for (int x = from.x; x < to.x; ++x)
+        memcpy((char*)shadow_buf + (y * 4 * sv_width + x * 4), color, 4);
+}
+
+void draw_rect(const Point& from, const Point& to, char c) {
+    char color[4] = { c, 0, 0, 0 };
+    for (int y = from.y; y < to.y; ++y)
+    for (int x = from.x; x < to.x; ++x) {
+        memcpy((char*)shadow_buf + (y * 4 * sv_width + x * 4), color, 4);
+    }
 }
 
 void Flash() {
+    draw_rect(Point{0, 0}, Point{sv_width, sv_height}, FlashColor);
+    w32_update_screen(shadow_buf, sv_width * 4);
     Sleep(500);
 }
 
 void draw_ball(Point& from) {
     draw_rect(Point{ from.x, from.y },
-        Point{ from.x + BALL_SIZE.x, from.y + BALL_SIZE.y}, 255);
+        Point{ from.x + BALL_SIZE.x, from.y + BALL_SIZE.y}, BallColor);
 }
 
 void draw_net(Point& from) {
     draw_rect(Point{ from.x, from.y },
-        Point{ from.x + NET_SIZE.x, from.y + NET_SIZE.y }, 255);
+        Point{ from.x + NET_SIZE.x, from.y + NET_SIZE.y }, NetColor);
 }
 
 
 void draw_brick(Brick& brick) {
     Point& from = brick.p;
-    draw_rect(from, Point{ from.x + BRICK_SIZE.x - 1, from.y + BRICK_SIZE.y - 1}, 80 * brick.State);
+    draw_rect(from,
+        Point{ from.x + BRICK_SIZE.x - 1, from.y + BRICK_SIZE.y - 1}, 
+        (char*)BrickColor + (brick.State * 4 - 4));
+}
+void draw_border() {
+    draw_rect(Point{ FieldFrom.x - 5, FieldFrom.y - 5 }, Point{ FieldTo.x + 5, FieldTo.y + 5 }, BorderColor);
+    draw_rect(Point{ FieldFrom.x, FieldFrom.y }, Point{ FieldTo.x, FieldTo.y }, FieldColor);
 }
 
 //draw the game to screen
@@ -122,11 +146,8 @@ void draw_game(){
   if(!shadow_buf)
       return;
   memset(shadow_buf, 0, sv_width*sv_height * 4);
-  draw_rect(Point{ FieldFrom.x - 5, FieldFrom.y - 5 }, Point{ FieldTo.x + 5, FieldTo.y + 5 }, 128);
-  draw_rect(Point{ FieldFrom.x, FieldFrom.y }, Point{ FieldTo.x, FieldTo.y}, 0);
-
+  draw_border();
   draw_net(Net);
-
   for (auto brick : Bricks) {
       if (brick.State) {
           draw_brick(brick);
