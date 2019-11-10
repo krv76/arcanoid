@@ -4,36 +4,102 @@
 
 #include <vector>
 
-char NetColor[] = { 255, 205, 0, 0 };
-char BallColor[] = { 255, 255, 255, 0 };
-char BrickColor[] = { 
-    64, 64, 128, 0,
-    128, 128, 192, 0,
-    200, 215, 255, 0
-};
-char BorderColor[4] = { 128, 128, 128, 0 };
-char FieldColor[4] = { 160, 80, 128, 0 };
-char FlashColor[4] = { 255, 255, 255, 0 };
+unsigned NetColor = 0x0000cfff;
+unsigned BallColor = 0x00ffffff;
+unsigned BrickColor[] = { 0x00804040, 0x00c08080, 0x00ffd7c8 };
+unsigned BorderColor = 0x00808080;
+unsigned FieldColor = 0x008050a0;
+unsigned FlashColor = 0x00ffffff;
+
 
 struct Point { int x, y;};
 struct PointF { float x, y;};
-struct Brick { Point p; int State;};
+
+const Point NET_SIZE{ 100, 5 };
+const float QUANT = 0.005f;
+const Point BRICK_SIZE = { 20, 20 };
+const Point BALL_SIZE = { 6, 9 };
+
+
+void draw_rect(const Point& from, const Point& to, unsigned color);
+
+Point iPoint(PointF& p) {
+    return Point{ int(p.x), int(p.y) };
+}
+
+struct Field {
+    Point from, to;
+    int border;
+    void Init() {
+        from = { 50, 50 };
+        to = { sv_width - 50, sv_height - 50 };
+        border = 5;
+    }
+    void Draw() {
+        draw_rect(Point{ from.x - border, from.y - border },
+            Point{ to.x + border, to.y + border }, BorderColor);
+        draw_rect(from, to, FieldColor);
+    }
+};
+
+struct Ball {
+    PointF from, to, dir;
+    void Draw() {
+        draw_rect(iPoint(from), iPoint(to), BallColor);
+    }
+    void ApplyDirection() {
+        from.x += dir.x;
+        from.y += dir.y;
+        to.x += dir.x;
+        to.y += dir.y;
+    }
+    void Init() {
+        from = { 250.f, 350.f };
+        to = { 250.f + BALL_SIZE.x, 350.f + BALL_SIZE.y };
+        dir = { 0.7, -1 };
+    }
+};
+
+struct Net {
+    PointF from, to, dir;
+    void Draw() {
+        draw_rect(iPoint(from), iPoint(to), NetColor);
+    }
+    void Init(Field& field) {
+        from.x = (field.to.x + field.from.x - NET_SIZE.x) / 2;
+        to.x = from.x + NET_SIZE.x;
+        from.y = (field.to.y - 2 * NET_SIZE.y);
+        to.y = from.y + NET_SIZE.y;
+    }
+    void Move(double dx, Field& field) {
+        from.x += dx;
+        to.x += dx;
+        if (to.x >= field.to.x) {
+            to.x = field.to.x;
+            from.x = to.x - NET_SIZE.x;
+        }
+        if (from.x < field.from.x) {
+            from.x = field.from.x;
+            to.x = from.x + NET_SIZE.x;
+        }
+    }
+};
+
+struct Brick { 
+    Point from, to; 
+    int State; 
+    void Draw() {
+        draw_rect(from, to, BrickColor[State - 1]);
+    }
+};
 
 std::vector<Brick> Bricks;
-Point Ball;
-PointF BallF;
-PointF BallDir;
-Point FieldFrom;
-Point FieldTo;
-Point Net;
-PointF NetF;
-const Point NET_SIZE{ 100, 5 };
-const float QUANT = 0.005;
-const Point BRICK_SIZE = { 20, 20 };
-const Point BALL_SIZE = { 6, 6 };
+Ball ball;
+Field field;
+Net net;
 
 //This function update full screen from scrptr. The array should be at least sv_height*scrpitch bytes size;
-void w32_update_screen(void *scrptr,unsigned scrpitch);
+void w32_update_screen(void *scrptr, unsigned scrpitch);
 
 //If this variable sets to true - game will quit
 
@@ -49,7 +115,7 @@ extern int gAxis[2];
 extern int gButtons[6];
 
 //sv_width and sv_height variables are width and height of screen
-extern unsigned int sv_width,sv_height;
+extern unsigned int sv_width, sv_height;
 
 //These functions called from another thread, when a button is pressed or released
 void win32_key_down(unsigned k){
@@ -60,57 +126,49 @@ void win32_key_up(unsigned){}
 //This is default fullscreen shadow buffer. You can use it if you want to.
 static unsigned *shadow_buf=NULL;
 
-void ApplyDirection(PointF& ballF, Point& ball, PointF& dir);
 void Flash();
 
-void BallToNet(PointF & ballF, PointF& dir, Point ball) {
-    if (ballF.y + BALL_SIZE.y > Net.y 
-        && ballF.x >= Net.x && ballF.x + BALL_SIZE.x <= Net.x + NET_SIZE.x) {
-        dir.y = -dir.y;
-        dir.x = 3 * (BallF.x + BALL_SIZE.x / 2.0 - Net.x - NET_SIZE.x / 2.0) / NET_SIZE.x;
-        ApplyDirection(ballF, ball, dir);
+void BallToNet(Ball& ball, Net& net) {
+    if (ball.to.y > net.from.y && ball.from.x >= net.from.x && ball.to.x <= net.to.x) 
+    {
+        ball.dir.y = -ball.dir.y;
+        ball.dir.x = 2.5 * ((ball.from.x + ball.to.x) / 2
+            - (net.from.x + net.to.x) / 2) / (net.to.x - net.from.x);
+        ball.ApplyDirection();
     }
 }
 
 void init_game(){
-    BallF = { 250, 350 };
-    BallDir = { 0.7, -1 };
-    Ball = { BallF.x, BallF.y };
-    FieldFrom = { 50, 50 };
-    FieldTo = { sv_width - 50, sv_height - 50 };
-    NetF.x = (FieldFrom.x + FieldTo.x - NET_SIZE.x) / 2;
-    NetF.y = (FieldTo.y - 2 * NET_SIZE.y);
+    ball.Init();
+    field.Init();
+    net.Init(field);
     Bricks.clear();
-    const int nx = (FieldTo.x - FieldFrom.x) / BRICK_SIZE.x, ny = 5;
-    const int ax = (FieldTo.x - FieldFrom.x) % BRICK_SIZE.x, ay = 0;
+    const int nx = (field.to.x - field.from.x) / BRICK_SIZE.x, ny = 5;
+    const int ax = field.from.x + (field.to.x - field.from.x) % BRICK_SIZE.x;
+    const int ay = 30 + field.from.y;
     for (int y = 0; y < ny; ++y)
     for (int x = 0; x < nx; ++x) {
-        Bricks.push_back({ { x * BRICK_SIZE.x + FieldFrom.x + ax, 
-            y * BRICK_SIZE.y + FieldFrom.y + ay}, 3 });
+        Bricks.push_back({ 
+            {x * BRICK_SIZE.x + ax, y * BRICK_SIZE.y + ay}, 
+            {(x + 1) * BRICK_SIZE.x + ax, (y + 1) * BRICK_SIZE.y + ay},
+            rand() % 4 
+        });
     }
     if (!shadow_buf)
         shadow_buf=new unsigned [sv_width*sv_height];
     Flash();
-
 }
 
 void close_game(){
-  if(shadow_buf) delete shadow_buf;
-  shadow_buf=NULL;
+    if(shadow_buf) 
+        delete shadow_buf;
+    shadow_buf=NULL;
 }
 
-void draw_rect(const Point& from, const Point& to, char* color) {
+void draw_rect(const Point& from, const Point& to, unsigned color) {
     for (int y = from.y; y < to.y; ++y)
     for (int x = from.x; x < to.x; ++x)
-        memcpy((char*)shadow_buf + (y * 4 * sv_width + x * 4), color, 4);
-}
-
-void draw_rect(const Point& from, const Point& to, char c) {
-    char color[4] = { c, 0, 0, 0 };
-    for (int y = from.y; y < to.y; ++y)
-    for (int x = from.x; x < to.x; ++x) {
-        memcpy((char*)shadow_buf + (y * 4 * sv_width + x * 4), color, 4);
-    }
+        shadow_buf[y * sv_width + x] = color;
 }
 
 void Flash() {
@@ -119,119 +177,87 @@ void Flash() {
     Sleep(500);
 }
 
-void draw_ball(Point& from) {
-    draw_rect(Point{ from.x, from.y },
-        Point{ from.x + BALL_SIZE.x, from.y + BALL_SIZE.y}, BallColor);
-}
-
 void draw_net(Point& from) {
     draw_rect(Point{ from.x, from.y },
         Point{ from.x + NET_SIZE.x, from.y + NET_SIZE.y }, NetColor);
 }
 
-
-void draw_brick(Brick& brick) {
-    Point& from = brick.p;
-    draw_rect(from,
-        Point{ from.x + BRICK_SIZE.x - 1, from.y + BRICK_SIZE.y - 1}, 
-        (char*)BrickColor + (brick.State * 4 - 4));
-}
-void draw_border() {
-    draw_rect(Point{ FieldFrom.x - 5, FieldFrom.y - 5 }, Point{ FieldTo.x + 5, FieldTo.y + 5 }, BorderColor);
-    draw_rect(Point{ FieldFrom.x, FieldFrom.y }, Point{ FieldTo.x, FieldTo.y }, FieldColor);
-}
-
 //draw the game to screen
 void draw_game(){
-  if(!shadow_buf)
-      return;
-  memset(shadow_buf, 0, sv_width*sv_height * 4);
-  draw_border();
-  draw_net(Net);
-  for (auto brick : Bricks) {
-      if (brick.State) {
-          draw_brick(brick);
-      }
-  }
-  draw_ball(Ball);
-  //here you should draw anything you want in to shadow buffer. (0 0) is left top corner
-  w32_update_screen(shadow_buf,sv_width*4);
+    if(!shadow_buf)
+        return;
+    memset(shadow_buf, 0, sv_width*sv_height * 4);
+    field.Draw();
+    net.Draw();
+    ball.Draw();
+    for (auto brick : Bricks) {
+        if (brick.State) {
+            brick.Draw();
+        }
+    }
+    //here you should draw anything you want in to shadow buffer. (0 0) is left top corner
+    w32_update_screen(shadow_buf,sv_width*4);
 }
 
 
 
-int Intersect(const Point& ball, const Point& BALL_SIZE, 
-    const Point& brick, const Point& BRICK_SIZE) 
+int Intersect(const Ball& ball, Brick& brick) 
 {
     int result = 0;
-    if (ball.x + BALL_SIZE.x >= brick.x && ball.y + BALL_SIZE.y >= brick.y
-        && brick.x + BRICK_SIZE.x >= ball.x && brick.y + BRICK_SIZE.y >= ball.y)
+    if (ball.to.x >= brick.from.x && ball.to.y >= brick.from.y
+        && brick.to.x >= ball.from.x && brick.to.y >= ball.from.y)
     {
-        
-        if ((ball.x + BALL_SIZE.x == brick.x) 
-            || (brick.x + BRICK_SIZE.x == ball.x)) result |= 1;
-        if ((brick.y + BRICK_SIZE.y == ball.y) 
-            || (ball.y + BALL_SIZE.y == brick.y)) result |= 2;
-
+        if (ball.to.x < brick.from.x + 1 || brick.to.x < ball.from.x + 1) 
+            result |= 1;
+        if (brick.to.y < ball.from.y + 1 || ball.to.y < brick.from.y + 1) 
+            result |= 2;
     }
     return result;
-}
-
-void ApplyDirection(PointF& ballF, Point& ball, PointF& dir) {
-    ballF.x += dir.x; ballF.y += dir.y;
-    ball.x = ballF.x; ball.y = ballF.y;
-}
-
-void InBound(float& x, const float from, const float to) {
-    if (x < from) x = from;
-    if (x > to) x = to;
 }
 
 //act the game. dt - is time passed from previous act
 void act_game(float dt){
     if (gButtons[1]) {
-        NetF.x += dt / QUANT;
+        net.Move(dt / QUANT, field);
     }
     if (gButtons[0]) {
-        NetF.x -= dt / QUANT;
+        net.Move(-dt / QUANT, field);
     }
-    InBound(NetF.x, float(FieldFrom.x), float(FieldTo.x - NET_SIZE.x));
-    Net.x = NetF.x; Net.y = NetF.y;
-    BallToNet(BallF, BallDir, Ball);
+    BallToNet(ball, net);
     static float t = 0;
     t += dt;
     while (t > QUANT) {
         t -= QUANT;
-        ApplyDirection(BallF, Ball, BallDir);
-        if (Ball.y + BALL_SIZE.y >= FieldTo.y) {
+        ball.ApplyDirection();
+        if (ball.to.y >= field.to.y) {
             init_game();
         }
-        if ((Ball.y + BALL_SIZE.y >= FieldTo.y)
-            || (Ball.y <= FieldFrom.y))
+        if ((ball.to.y >= field.to.y) || (ball.from.y <= field.from.y))
         {
-            BallDir.y = -BallDir.y;
-            ApplyDirection(BallF, Ball, BallDir);
+            ball.dir.y = -ball.dir.y;
+            ball.ApplyDirection();
         }
-        if (Ball.x <= FieldFrom.x || Ball.x + BALL_SIZE.x >= FieldTo.x) {
-            BallDir.x = -BallDir.x;
-            ApplyDirection(BallF, Ball, BallDir);
+        if (ball.from.x <= field.from.x || ball.to.x >= field.to.x) {
+            ball.dir.x = -ball.dir.x;
+            ball.ApplyDirection();
         }
 
         for (size_t i = 0; i < Bricks.size(); ++i) {
             if (Bricks[i].State){
-                int intersectResult = Intersect(Ball, BALL_SIZE, Bricks[i].p, BRICK_SIZE);
+                int intersectResult = Intersect(ball, Bricks[i]);
                 if (intersectResult & 1) {
-                    BallDir.x = -BallDir.x;
+                    ball.dir.x = -ball.dir.x;
                 }
                 if (intersectResult & 2) {
                     if (Bricks[i].State)
-                    BallDir.y = -BallDir.y;
+                        ball.dir.y = -ball.dir.y;
                 }
                 if (intersectResult) {
-                    ApplyDirection(BallF, Ball, BallDir);
+                    ball.ApplyDirection();
                     --Bricks[i].State;
                 }
             }
         }
     }
 }
+
