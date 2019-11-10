@@ -9,7 +9,7 @@ unsigned BallColor = 0x00ffffff;
 unsigned BrickColor[] = { 0x00804040, 0x00c08080, 0x00ffd7c8 };
 unsigned BorderColor = 0x00808080;
 unsigned FieldColor = 0x008050a0;
-unsigned FlashColor = 0x00ffffff;
+unsigned FlashColor = 0x00a00080;
 
 
 struct Point { int x, y;};
@@ -97,7 +97,8 @@ std::vector<Brick> Bricks;
 Ball ball;
 Field field;
 Net net;
-
+double time;
+bool skipAct;
 //This function update full screen from scrptr. The array should be at least sv_height*scrpitch bytes size;
 void w32_update_screen(void *scrptr, unsigned scrpitch);
 
@@ -139,9 +140,15 @@ void BallToNet(Ball& ball, Net& net) {
 }
 
 void init_game(){
+    if (!shadow_buf)
+        shadow_buf = new unsigned[sv_width*sv_height];
+    time = 0;
+    Flash();
     ball.Init();
     field.Init();
     net.Init(field);
+    skipAct = true;
+
     Bricks.clear();
     const int nx = (field.to.x - field.from.x) / BRICK_SIZE.x, ny = 5;
     const int ax = field.from.x + (field.to.x - field.from.x) % BRICK_SIZE.x;
@@ -154,9 +161,6 @@ void init_game(){
             rand() % 4 
         });
     }
-    if (!shadow_buf)
-        shadow_buf=new unsigned [sv_width*sv_height];
-    Flash();
 }
 
 void close_game(){
@@ -174,7 +178,11 @@ void draw_rect(const Point& from, const Point& to, unsigned color) {
 void Flash() {
     draw_rect(Point{0, 0}, Point{sv_width, sv_height}, FlashColor);
     w32_update_screen(shadow_buf, sv_width * 4);
+    Sleep(10);
+    draw_rect(Point{ 0, 0 }, Point{ sv_width, sv_height }, FlashColor);
+    w32_update_screen(shadow_buf, sv_width * 4);
     Sleep(500);
+
 }
 
 void draw_net(Point& from) {
@@ -217,6 +225,10 @@ int Intersect(const Ball& ball, Brick& brick)
 
 //act the game. dt - is time passed from previous act
 void act_game(float dt){
+    if (skipAct) {
+        skipAct = false;
+        return;
+    }
     if (gButtons[1]) {
         net.Move(dt / QUANT, field);
     }
@@ -224,12 +236,12 @@ void act_game(float dt){
         net.Move(-dt / QUANT, field);
     }
     BallToNet(ball, net);
-    static float t = 0;
-    t += dt;
-    while (t > QUANT) {
-        t -= QUANT;
+    time += dt;
+    while (time > QUANT) {
+        time -= QUANT;
         ball.ApplyDirection();
         if (ball.to.y >= field.to.y) {
+            Sleep(1000);
             init_game();
         }
         if ((ball.to.y >= field.to.y) || (ball.from.y <= field.from.y))
