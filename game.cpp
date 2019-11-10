@@ -6,11 +6,10 @@
 
 unsigned NetColor = 0x0000cfff;
 unsigned BallColor = 0x00ffffff;
-unsigned BrickColor[] = { 0x00804040, 0x00c08080, 0x00ffd7c8 };
+unsigned BrickColor[] = { 0x00a04060, 0x00c08080, 0x00ffd7c8 };
 unsigned BorderColor = 0x00808080;
 unsigned FieldColor = 0x008050a0;
-unsigned FlashColor = 0x00a00080;
-
+unsigned FlashColor = 0x00a04080;
 
 struct Point { int x, y;};
 struct PointF { float x, y;};
@@ -89,7 +88,7 @@ struct Brick {
     Point from, to; 
     int State; 
     void Draw() {
-        draw_rect(from, to, BrickColor[State - 1]);
+        draw_rect(from, Point{to.x - 1, to.y - 1}, BrickColor[State - 1]);
     }
 };
 
