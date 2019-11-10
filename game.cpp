@@ -14,7 +14,7 @@ unsigned FlashColor = 0x00a04080;
 struct Point { int x, y;};
 struct PointF { float x, y;};
 
-const Point NET_SIZE{ 100, 5 };
+const PointF NET_SIZE{ 100, 5 };
 const float QUANT = 0.005f;
 const Point BRICK_SIZE = { 20, 20 };
 const Point BALL_SIZE = { 6, 9 };
@@ -70,15 +70,15 @@ struct Net {
         from.y = (field.to.y - 2 * NET_SIZE.y);
         to.y = from.y + NET_SIZE.y;
     }
-    void Move(double dx, Field& field) {
+    void Move(float dx, Field& field) {
         from.x += dx;
         to.x += dx;
         if (to.x >= field.to.x) {
-            to.x = field.to.x;
+            to.x = static_cast<float>(field.to.x);
             from.x = to.x - NET_SIZE.x;
         }
         if (from.x < field.from.x) {
-            from.x = field.from.x;
+            from.x = static_cast<float>(field.from.x);
             to.x = from.x + NET_SIZE.x;
         }
     }
@@ -132,8 +132,8 @@ void BallToNet(Ball& ball, Net& net) {
     if (ball.to.y > net.from.y && ball.from.x >= net.from.x && ball.to.x <= net.to.x) 
     {
         ball.dir.y = -ball.dir.y;
-        ball.dir.x = 2.5 * ((ball.from.x + ball.to.x) / 2
-            - (net.from.x + net.to.x) / 2) / (net.to.x - net.from.x);
+        ball.dir.x = 2.5f * ((ball.from.x + ball.to.x) / 2.f
+            - (net.from.x + net.to.x) / 2.f) / (net.to.x - net.from.x);
         ball.ApplyDirection();
     }
 }
@@ -214,10 +214,14 @@ int Intersect(const Ball& ball, Brick& brick)
     if (ball.to.x >= brick.from.x && ball.to.y >= brick.from.y
         && brick.to.x >= ball.from.x && brick.to.y >= ball.from.y)
     {
-        if (ball.to.x < brick.from.x + 1 || brick.to.x < ball.from.x + 1) 
-            result |= 1;
-        if (brick.to.y < ball.from.y + 1 || ball.to.y < brick.from.y + 1) 
-            result |= 2;
+        for (float eps = 0.001; result == 0; eps *= 2) {
+            if (ball.to.x < brick.from.x + eps
+                || brick.to.x < ball.from.x + eps)
+                result |= 1;
+            if (brick.to.y < ball.from.y + eps
+                || ball.to.y < brick.from.y + eps)
+                result |= 2;
+        }
     }
     return result;
 }
